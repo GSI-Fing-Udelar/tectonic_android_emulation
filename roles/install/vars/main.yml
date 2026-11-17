@@ -1,0 +1,17 @@
+---
+android_sdk_root: "/home/{{ android_user }}/Android"
+android_base_dir: "/home/{{ android_user }}"
+android_home: "{{ android_sdk_root }}"
+cli_tools_zip_dest: "/tmp/commandlinetools-{{ android_user }}.zip"
+system_image_package: "system-images;android-{{ api_level }};google_apis;x86_64"
+platform_package: "platforms;android-{{ api_level }}"
+avd_name: "Tectonic"
+emulator_options: "-no-audio -no-snapshot-load -no-snapshot-save -no-boot-anim"
+display_num: 2
+display_res: "1080x1920x24"
+sdk_environment:
+  ANDROID_SDK_ROOT: "{{ android_sdk_root }}"
+  ANDROID_HOME: "{{ android_home }}"
+  ANDROID_AVD_HOME: "{{ android_sdk_root }}"
+  ANDROID_SDK_HOME: "/home/{{ android_user }}"
+  PATH: "{{ android_sdk_root }}/cmdline-tools/latest/bin:{{ android_sdk_root }}/emulator:{{ android_sdk_root }}/platform-tools:{{ ansible_facts['env']['PATH'] }}"

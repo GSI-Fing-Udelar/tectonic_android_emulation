@@ -1,0 +1,260 @@
+---
+- name: Check supported host (x86_64 and Ubuntu-like)
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['architecture'] == 'x86_64'
+      - ansible_facts['os_family'] == 'Debian'
+    quiet: true
+    fail_msg: >-
+      Unsupported host. This role requires an x86_64 Ubuntu-like system
+      (detected: {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}, {{ ansible_facts['architecture'] }}).
+
+- name: APT update
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install dependencies
+  ansible.builtin.apt:
+    name:
+      - openjdk-21-jdk
+      - x11vnc
+      - unzip
+      - xvfb
+      - libpulse0
+      - libgl1-mesa-dev
+    state: present
+
+- name: Create Android SDK root directory
+  ansible.builtin.file:
+    path: "{{ android_sdk_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Download Android Command Line Tools
+  ansible.builtin.get_url:
+    url: "{{ cli_tools_url }}"
+    dest: "{{ cli_tools_zip_dest }}"
+    mode: "0644"
+
+- name: Create parent directory for latest
+  ansible.builtin.file:
+    path: "{{ android_sdk_root }}/cmdline-tools"
+    state: directory
+    mode: "0755"
+
+- name: Unzip Command Line Tools
+  ansible.builtin.unarchive:
+    src: "{{ cli_tools_zip_dest }}"
+    dest: "{{ android_sdk_root }}/cmdline-tools/"
+    remote_src: true
+    creates: "{{ android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager"
+
+- name: Move cmdline-tools to latest
+  ansible.builtin.command:
+    cmd: "mv {{ android_sdk_root }}/cmdline-tools/cmdline-tools {{ android_sdk_root }}/cmdline-tools/latest"
+  args:
+    creates: "{{ android_sdk_root }}/cmdline-tools/latest/bin"
+
+- name: Configure environment variables
+  ansible.builtin.blockinfile:
+    path: "/home/{{ android_user }}/.bashrc"
+    create: true
+    block: |
+      export ANDROID_SDK_ROOT="{{ android_sdk_root }}"
+      export ANDROID_HOME="{{ android_home }}"
+      export ANDROID_SDK_HOME="/home/{{ android_user }}"
+      export ANDROID_AVD_HOME="{{ android_sdk_root }}"
+      export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$ANDROID_SDK_ROOT/emulator:$PATH"
+    mode: "0644"
+
+- name: Accept Android SDK licenses
+  ansible.builtin.shell:
+    cmd: "yes | {{ android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager --licenses"
+  environment: "{{ sdk_environment }}"
+  args:
+    chdir: "{{ android_base_dir }}"
+  register: license_acceptance_result
+  changed_when: >
+    ('All SDK package licenses accepted' not in license_acceptance_result.stdout and
+      'licenses were accepted' not in license_acceptance_result.stderr)
+  failed_when: >
+    (license_acceptance_result.rc != 0 and
+    'All SDK package licenses accepted' not in license_acceptance_result.stdout and
+    'licenses were accepted' not in license_acceptance_result.stderr)
+
+- name: Install platform-tools, emulator, platform and system image
+  ansible.builtin.shell:
+    cmd: >-
+      yes | {{ android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager
+      --sdk_root={{ android_sdk_root }}
+      "platform-tools"
+      "emulator"
+      "{{ platform_package }}"
+      "{{ system_image_package }}"
+  environment: "{{ sdk_environment }}"
+  args:
+    creates: "{{ android_sdk_root }}/platforms/android-{{ api_level }}"
+    chdir: "/home/{{ android_user }}"
+
+- name: Create Android Virtual Device (AVD)
+  ansible.builtin.shell:
+    cmd: |
+      echo "no" | {{ android_sdk_root }}/cmdline-tools/latest/bin/avdmanager create avd \
+        --name "{{ avd_name }}" \
+        --package "{{ system_image_package }}" \
+        --device "{{ avd_device }}" \
+        --force
+  environment: "{{ sdk_environment }}"
+  args:
+    chdir: "{{ android_base_dir }}"
+    creates: "{{ android_sdk_root }}/{{ avd_name }}.ini"
+  changed_when: true
+
+- name: Determine available groups
+  ansible.builtin.getent:
+    database: group
+
+- name: Add user {{ android_user }} to group kvm
+  ansible.builtin.user:
+    name: "{{ android_user }}"
+    groups: kvm
+    append: yes
+  when: '"kvm" in ansible_facts.getent_group'
+
+- name: Change permissions for .ini AVD
+  ansible.builtin.file:
+    path: "{{ android_sdk_root }}/{{ avd_name }}.ini"
+    state: file
+    owner: "{{ android_user }}"
+    group: "{{ android_user }}"
+    mode: "0644"
+
+- name: Change permissions for .avd AVD
+  ansible.builtin.file:
+    path: "{{ android_sdk_root }}/{{ avd_name }}.avd"
+    state: directory
+    owner: "{{ android_user }}"
+    group: "{{ android_user }}"
+    recurse: true
+    mode: "0755"
+
+- name: "Install Xvfb service file"
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Run Xvfb on {{ display_num }}
+
+      [Service]
+      Type=exec
+      ExecStart=/usr/bin/Xvfb :{{ display_num }} -screen 0 {{ display_res }}
+      ExecStartPost=/bin/sleep 2
+
+      [Install]
+      WantedBy=default.target
+    dest: /etc/systemd/system/xvfb.service
+    mode: "0644"
+
+- name: Install x11vnc service file
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Run x11vnc
+      After=xvfb.service
+
+      [Service]
+      Type=exec
+      ExecStart=/usr/bin/x11vnc -display :{{ display_num }} -forever -rfbport {{ vnc_port }} -passwd {{ vnc_pass }}
+      # Wait for port to listen (Health Check)
+      ExecStartPost=/usr/bin/timeout 30 sh -c 'while ! ss -H -t -l -n sport = :{{ vnc_port }} | grep -q "LISTEN.*:{{ vnc_port }}"; do sleep 1; done'
+
+      [Install]
+      WantedBy=default.target
+    dest: /etc/systemd/system/x11vnc.service
+    mode: "0644"
+
+- name: Install Android emulator service file
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Run Android Emulator
+      After=x11vnc.service
+
+      [Service]
+      Type=exec
+      WorkingDirectory={{ android_base_dir }}
+      User={{ android_user }}
+
+      # Explicit environment variables for robustness
+      Environment="ANDROID_SDK_ROOT={{ android_sdk_root }}"
+      Environment="ANDROID_HOME={{ android_home }}"
+      Environment="ANDROID_AVD_HOME={{ android_sdk_root }}"
+      Environment="ANDROID_SDK_HOME=/home/{{ android_user }}"
+      Environment="PATH={{ android_sdk_root }}/cmdline-tools/latest/bin:{{ android_sdk_root }}/platform-tools:{{ android_sdk_root }}/emulator:/usr/bin:/bin"
+      Environment="DISPLAY=:{{ display_num }}"
+
+      ExecStart={{ android_sdk_root }}/emulator/emulator -avd {{ avd_name }} {{ emulator_options }}
+      Restart=on-failure
+
+      [Install]
+      WantedBy=default.target
+    dest: /etc/systemd/system/android_emulator.service
+    mode: "0644"
+
+- name: Install Android logcat capture service file
+  ansible.builtin.copy:
+    content: |
+      [Unit]
+      Description=Capture Android logcat to file
+      After=android_emulator.service
+      Requires=android_emulator.service
+
+      [Service]
+      Type=simple
+      User={{ android_user }}
+      Environment="ANDROID_SDK_ROOT={{ android_sdk_root }}"
+      Environment="PATH={{ android_sdk_root }}/platform-tools:/usr/bin:/bin"
+      # Espera a que el dispositivo esté listo antes de engancharse
+      ExecStartPre=/bin/sh -c '{{ android_sdk_root }}/platform-tools/adb wait-for-device'
+      ExecStart=/bin/sh -c '{{ android_sdk_root }}/platform-tools/adb logcat -v threadtime >> /var/log/android/logcat.log'
+      Restart=on-failure
+
+      [Install]
+      WantedBy=default.target
+    dest: /etc/systemd/system/android_logcat.service
+    mode: "0644"
+
+- name: Create log directory
+  ansible.builtin.file:
+    path: /var/log/android
+    state: directory
+    owner: "{{ android_user }}"
+    mode: "0755"
+
+- name: Configure logrotate for android logcat
+  ansible.builtin.copy:
+    content: |
+      /var/log/android/logcat.log {
+        daily
+        rotate 3
+        compress
+        missingok
+        notifempty
+        copytruncate
+      }
+    dest: /etc/logrotate.d/android-logcat
+
+- name: Reload daemon configs
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Enable and start service {{ item }}
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  with_items:
+    - xvfb
+    - x11vnc
+    - android_emulator
+    - android_logcat

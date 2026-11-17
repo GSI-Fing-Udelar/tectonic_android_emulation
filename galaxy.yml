@@ -1,0 +1,17 @@
+namespace: tectonic
+name: android
+version: 1.0.0
+readme: README.md
+authors:
+  - gsi@fing.edu.uy
+description: Collection for Android emulation in the Tectonic cyber range
+license:
+  - GPL-3.0-only
+tags:
+  - "tectonic"
+  - "mobile"
+  - "android"
+repository: https://github.com/GSI-Fing-Udelar/tectonic_android_emulation
+homepage: https://www.fing.edu.uy/inco/proyectos/tectonic
+issues: https://github.com/GSI-Fing-Udelar/tectonic_android_emulation/issues
+build_ignore: []

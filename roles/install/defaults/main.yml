@@ -1,0 +1,7 @@
+---
+android_user: "{{ ansible_user }}"
+cli_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip"
+api_level: "24"
+avd_device: "pixel"
+vnc_port: 5902
+vnc_pass: "tectonic"
