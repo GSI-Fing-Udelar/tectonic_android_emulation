@@ -15,3 +15,21 @@ sdk_environment:
   ANDROID_AVD_HOME: "{{ android_sdk_root }}"
   ANDROID_SDK_HOME: "/home/{{ android_user }}"
   PATH: "{{ android_sdk_root }}/cmdline-tools/latest/bin:{{ android_sdk_root }}/emulator:{{ android_sdk_root }}/platform-tools:{{ ansible_facts['env']['PATH'] }}"
+  http_proxy: "{{ config.proxy | default(omit) }}"
+  https_proxy: "{{ config.proxy | default(omit) }}"
+  JAVA_TOOL_OPTIONS: >-
+    {{
+      (
+        '-Dhttp.proxyHost=' + (config.proxy | urlsplit('hostname')) +
+        ' -Dhttp.proxyPort=' + (config.proxy | urlsplit('port') | string) +
+        ' -Dhttps.proxyHost=' + (config.proxy | urlsplit('hostname')) +
+        ' -Dhttps.proxyPort=' + (config.proxy | urlsplit('port') | string)
+      ) if (config.proxy is defined and config.proxy) else omit
+    }}
+sdkmanager_proxy_flags: >-
+  {{
+    (
+      '--proxy=http --proxy_host=' + (config.proxy | urlsplit('hostname')) +
+      ' --proxy_port=' + (config.proxy | urlsplit('port') | string)
+    ) if (config.proxy is defined and config.proxy) else ''
+  }}

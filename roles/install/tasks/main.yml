@@ -70,7 +70,7 @@
 
 - name: Accept Android SDK licenses
   ansible.builtin.shell:
-    cmd: "yes | {{ android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager --licenses"
+    cmd: "yes | {{ android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager --licenses {{ sdkmanager_proxy_flags }}"
   environment: "{{ sdk_environment }}"
   args:
     chdir: "{{ android_base_dir }}"
@@ -88,6 +88,7 @@
     cmd: >-
       yes | {{ android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager
       --sdk_root={{ android_sdk_root }}
+      {{ sdkmanager_proxy_flags }}
       "platform-tools"
       "emulator"
       "{{ platform_package }}"
