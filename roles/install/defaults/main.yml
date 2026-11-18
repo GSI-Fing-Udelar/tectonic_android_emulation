@@ -1,5 +1,5 @@
 ---
-android_user: "{{ ansible_user }}"
+android_user: "android"
 cli_tools_url: "https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip"
 api_level: "24"
 avd_device: "pixel"

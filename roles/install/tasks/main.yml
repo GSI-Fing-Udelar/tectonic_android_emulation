@@ -25,6 +25,13 @@
       - libgl1-mesa-dev
     state: present
 
+- name: "Ensure {{ android_user }} exists"
+  ansible.builtin.user:
+    name: "{{ android_user }}"
+    state: present
+    create_home: true
+    shell: /bin/bash
+
 - name: Create Android SDK root directory
   ansible.builtin.file:
     path: "{{ android_sdk_root }}"
@@ -259,3 +266,11 @@
     - x11vnc
     - android_emulator
     - android_logcat
+
+- name: "Ensure the Android config directory is owned by {{ android_user }}"
+  ansible.builtin.file:
+    path: "/home/{{ android_user }}/.android"
+    state: directory
+    owner: "{{ android_user }}"
+    group: "{{ android_user }}"
+    recurse: true
